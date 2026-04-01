@@ -49,7 +49,7 @@ dimension = embeddings.shape[1]
 index = faiss.IndexFlatL2(dimension)
 index.add(embeddings)
 
-# 🔍 User query
+# User query
 query = os.getenv("USER_QUERY", "What are his skills?")
 query_vector = embed_model.encode([query])
 
@@ -63,7 +63,7 @@ for i in I[0]:
 # Model selection
 selected_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-# ✅ Improved Prompt (Day 7)
+# Improved Prompt (Day 7)
 content = f"""
 You are an AI assistant.
 
@@ -79,7 +79,7 @@ Question:
 Provide a clear and structured answer.
 """
 
-# 🧠 Send to LLM
+# Send to LLM
 try:
     response = client.chat.completions.create(
         model=selected_model,
