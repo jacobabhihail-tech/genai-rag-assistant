@@ -14,13 +14,13 @@ load_dotenv()
 print("KEY:", os.getenv("OPENAI_API_KEY"))
 print("BASE:", os.getenv("OPENAI_BASE_URL"))
 
-# LLM setup (OpenRouter or OpenAI-compatible)
+# LLM setup
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# Document loading (fallback if Profile.pdf is missing)
+# Document loading
 pdf_path = "Profile.pdf"
 if os.path.exists(pdf_path):
     loader = PyPDFLoader(pdf_path)
@@ -60,8 +60,24 @@ retrieved_text = ""
 for i in I[0]:
     retrieved_text += chunks[i].page_content + "\n"
 
-# model override via env var; default to a widely supported model
+# Model selection
 selected_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# ✅ Improved Prompt (Day 7)
+content = f"""
+You are an AI assistant.
+
+Use ONLY the context below to answer the question.
+If the answer is not in the context, say "I don't know".
+
+Context:
+{retrieved_text}
+
+Question:
+{query}
+
+Provide a clear and structured answer.
+"""
 
 # 🧠 Send to LLM
 try:
@@ -70,12 +86,13 @@ try:
         messages=[
             {
                 "role": "user",
-                "content": f"Answer the question based on the context below:\n\n{retrieved_text}\n\nQuestion: {query}"
+                "content": content
             }
         ]
     )
     print("\nFinal Answer:\n")
     print(response.choices[0].message.content)
+
 except Exception as exc:
     print("Error while calling chat completion:", exc)
-    print("Try setting OPENAI_MODEL to a valid OpenRouter model (e.g., gpt-4o-mini, gpt-3.5-turbo).")
+    print("Try setting OPENAI_MODEL to a valid OpenRouter model.")
