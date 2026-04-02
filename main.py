@@ -28,39 +28,57 @@ embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 # ----------- CORE FUNCTIONS -----------
 
 def process_document(file_path):
-    loader = PyPDFLoader(file_path)
-    documents = loader.load()
+    try:
+        loader = PyPDFLoader(file_path)
+        documents = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
-    doc_chunks = text_splitter.split_documents(documents)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50
+        )
+        doc_chunks = text_splitter.split_documents(documents)
 
-    texts = [chunk.page_content for chunk in doc_chunks]
-    embeddings = embed_model.encode(texts)
-    embeddings = np.array(embeddings)
+        if len(doc_chunks) == 0:
+            raise ValueError("No content found in document")
 
-    dimension = embeddings.shape[1]
-    faiss_index = faiss.IndexFlatL2(dimension)
-    faiss_index.add(embeddings)
+        texts = [chunk.page_content for chunk in doc_chunks]
+        embeddings = embed_model.encode(texts)
+        embeddings = np.array(embeddings)
 
-    return faiss_index, doc_chunks
+        dimension = embeddings.shape[1]
+        faiss_index = faiss.IndexFlatL2(dimension)
+        faiss_index.add(embeddings)
+
+        return faiss_index, doc_chunks
+
+    except Exception as e:
+        raise RuntimeError(f"Error processing document: {str(e)}")
 
 
 def retrieve_chunks(query, faiss_index, doc_chunks):
-    query_vector = embed_model.encode([query])
-    D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
+    try:
+        if not query.strip():
+            raise ValueError("Query cannot be empty")
 
-    retrieved_text = ""
-    for i in I[0]:
-        retrieved_text += doc_chunks[i].page_content + "\n"
+        query_vector = embed_model.encode([query])
+        D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
 
-    return retrieved_text
+        retrieved_text = ""
+        for i in I[0]:
+            retrieved_text += doc_chunks[i].page_content + "\n"
+
+        return retrieved_text
+
+    except Exception as e:
+        raise RuntimeError(f"Error retrieving chunks: {str(e)}")
 
 
 def generate_answer(query, context):
-    content = f"""
+    try:
+        if not context.strip():
+            return "I don't know"
+
+        content = f"""
 You are an AI assistant.
 
 Use ONLY the context below to answer the question.
@@ -75,14 +93,17 @@ Question:
 Provide a clear and structured answer.
 """
 
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        messages=[
-            {"role": "user", "content": content}
-        ]
-    )
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "user", "content": content}
+            ]
+        )
 
-    return response.choices[0].message.content
+        return response.choices[0].message.content
+
+    except Exception as e:
+        raise RuntimeError(f"Error generating answer: {str(e)}")
 
 
 # ----------- API ENDPOINTS -----------
@@ -96,33 +117,40 @@ def home():
 async def upload_file(file: UploadFile = File(...)):
     global index, chunks
 
-    file_location = f"temp_{file.filename}"
+    try:
+        if not file.filename.endswith(".pdf"):
+            return {"error": "Only PDF files are allowed"}
 
-    with open(file_location, "wb") as f:
-        f.write(await file.read())
+        file_location = f"temp_{file.filename}"
 
-    index, chunks = process_document(file_location)
+        with open(file_location, "wb") as f:
+            f.write(await file.read())
 
-    os.remove(file_location)
+        index, chunks = process_document(file_location)
 
-    return {
-        "message": "File processed successfully",
-        "chunks": len(chunks)
-    }
+        os.remove(file_location)
+
+        return {
+            "message": "File processed successfully",
+            "chunks": len(chunks)
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/ask")
 def ask(query: str):
     global index, chunks
 
-    if index is None or chunks is None:
-        return {"error": "No document uploaded yet"}
-
     try:
+        if index is None or chunks is None:
+            return {"error": "No document uploaded yet"}
+
         context = retrieve_chunks(query, index, chunks)
         answer = generate_answer(query, context)
 
         return {"answer": answer}
 
-    except Exception as exc:
-        return {"error": str(exc)}
+    except Exception as e:
+        return {"error": str(e)}
