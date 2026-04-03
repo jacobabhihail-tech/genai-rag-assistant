@@ -10,6 +10,8 @@ from langchain_openai import OpenAIEmbeddings
 import faiss
 import numpy as np
 
+print("APP STARTING...")
+
 load_dotenv()
 
 app = FastAPI()
