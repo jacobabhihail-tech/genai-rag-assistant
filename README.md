@@ -153,6 +153,13 @@ https://genai-rag-assistant-n5mg.onrender.com/
 
 Visit the link above to access the live API documentation and try the application!
 
+## UI Preview
+
+Here is a screenshot of the user interface:
+
+![UI Preview](UI_Preview.png)
+
+
 ### Deploy to Render
 
 1. **Push to GitHub**
