@@ -5,7 +5,8 @@ from openai import OpenAI
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+from langchain_openai import OpenAIEmbeddings
+
 import faiss
 import numpy as np
 
@@ -19,10 +20,15 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
+# Embedding model (API-based, lightweight)
+embeddings_model = OpenAIEmbeddings(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL")
+)
+
 # Global storage
 index = None
 chunks = None
-embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 # ----------- CORE FUNCTIONS -----------
@@ -42,7 +48,9 @@ def process_document(file_path):
             raise ValueError("No content found in document")
 
         texts = [chunk.page_content for chunk in doc_chunks]
-        embeddings = embed_model.encode(texts)
+
+        # API embeddings (no local model)
+        embeddings = embeddings_model.embed_documents(texts)
         embeddings = np.array(embeddings)
 
         dimension = embeddings.shape[1]
@@ -60,7 +68,10 @@ def retrieve_chunks(query, faiss_index, doc_chunks):
         if not query.strip():
             raise ValueError("Query cannot be empty")
 
-        query_vector = embed_model.encode([query])
+        # API embedding for query
+        query_vector = embeddings_model.embed_query(query)
+        query_vector = np.array([query_vector])
+
         D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
 
         retrieved_text = ""
