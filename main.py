@@ -10,7 +10,7 @@ from langchain_openai import OpenAIEmbeddings
 import faiss
 import numpy as np
 
-print("APP STARTING...")
+print("APP STARTED SUCCESSFULLY")
 
 load_dotenv()
 
@@ -22,11 +22,8 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# Embedding model (API-based, lightweight)
-embeddings_model = OpenAIEmbeddings(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL")
-)
+# Lazy-loaded embedding model
+embeddings_model = None
 
 # Global storage
 index = None
@@ -35,8 +32,22 @@ chunks = None
 
 # ----------- CORE FUNCTIONS -----------
 
+def get_embeddings_model():
+    global embeddings_model
+
+    if embeddings_model is None:
+        embeddings_model = OpenAIEmbeddings(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            base_url=os.getenv("OPENAI_BASE_URL")
+        )
+
+    return embeddings_model
+
+
 def process_document(file_path):
     try:
+        embedder = get_embeddings_model()
+
         loader = PyPDFLoader(file_path)
         documents = loader.load()
 
@@ -51,8 +62,7 @@ def process_document(file_path):
 
         texts = [chunk.page_content for chunk in doc_chunks]
 
-        # API embeddings (no local model)
-        embeddings = embeddings_model.embed_documents(texts)
+        embeddings = embedder.embed_documents(texts)
         embeddings = np.array(embeddings)
 
         dimension = embeddings.shape[1]
@@ -70,8 +80,9 @@ def retrieve_chunks(query, faiss_index, doc_chunks):
         if not query.strip():
             raise ValueError("Query cannot be empty")
 
-        # API embedding for query
-        query_vector = embeddings_model.embed_query(query)
+        embedder = get_embeddings_model()
+
+        query_vector = embedder.embed_query(query)
         query_vector = np.array([query_vector])
 
         D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
