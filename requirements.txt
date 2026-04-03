@@ -9,3 +9,4 @@ langchain-openai
 faiss-cpu
 numpy
 pypdf
+python-multipart
