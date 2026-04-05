@@ -22,112 +22,95 @@ client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL")
 )
 
-# Lazy-loaded embedding model
-embeddings_model = None
+# Embedding model
+embeddings_model = OpenAIEmbeddings(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL")
+)
 
 # Global storage
 index = None
 chunks = None
+chat_history = []
 
 
 # ----------- CORE FUNCTIONS -----------
 
-def get_embeddings_model():
-    global embeddings_model
-
-    if embeddings_model is None:
-        embeddings_model = OpenAIEmbeddings(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL")
-        )
-
-    return embeddings_model
-
-
 def process_document(file_path):
-    try:
-        embedder = get_embeddings_model()
+    loader = PyPDFLoader(file_path)
+    documents = loader.load()
 
-        loader = PyPDFLoader(file_path)
-        documents = loader.load()
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=50
-        )
-        doc_chunks = text_splitter.split_documents(documents)
+    doc_chunks = text_splitter.split_documents(documents)
 
-        if len(doc_chunks) == 0:
-            raise ValueError("No content found in document")
+    texts = [chunk.page_content for chunk in doc_chunks]
 
-        texts = [chunk.page_content for chunk in doc_chunks]
+    embeddings = embeddings_model.embed_documents(texts)
+    embeddings = np.array(embeddings)
 
-        embeddings = embedder.embed_documents(texts)
-        embeddings = np.array(embeddings)
+    dimension = embeddings.shape[1]
 
-        dimension = embeddings.shape[1]
-        faiss_index = faiss.IndexFlatL2(dimension)
-        faiss_index.add(embeddings)
+    faiss_index = faiss.IndexFlatL2(dimension)
+    faiss_index.add(embeddings)
 
-        return faiss_index, doc_chunks
-
-    except Exception as e:
-        raise RuntimeError(f"Error processing document: {str(e)}")
+    return faiss_index, doc_chunks
 
 
 def retrieve_chunks(query, faiss_index, doc_chunks):
-    try:
-        if not query.strip():
-            raise ValueError("Query cannot be empty")
+    query_vector = embeddings_model.embed_query(query)
+    query_vector = np.array([query_vector])
 
-        embedder = get_embeddings_model()
+    D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
 
-        query_vector = embedder.embed_query(query)
-        query_vector = np.array([query_vector])
+    retrieved_text = ""
+    for i in I[0]:
+        retrieved_text += doc_chunks[i].page_content + "\n"
 
-        D, I = faiss_index.search(query_vector, k=min(2, len(doc_chunks)))
-
-        retrieved_text = ""
-        for i in I[0]:
-            retrieved_text += doc_chunks[i].page_content + "\n"
-
-        return retrieved_text
-
-    except Exception as e:
-        raise RuntimeError(f"Error retrieving chunks: {str(e)}")
+    return retrieved_text
 
 
 def generate_answer(query, context):
-    try:
-        if not context.strip():
-            return "I don't know"
+    global chat_history
 
-        content = f"""
+    if not context.strip():
+        return "I don't know"
+
+    system_prompt = """
 You are an AI assistant.
 
-Use ONLY the context below to answer the question.
-If the answer is not in the context, say "I don't know".
-
-Context:
-{context}
-
-Question:
-{query}
-
-Provide a clear and structured answer.
+Use ONLY the provided context to answer.
+If answer is not in context, say "I don't know".
+Be clear and structured.
 """
 
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "user", "content": content}
-            ]
-        )
+    messages = [{"role": "system", "content": system_prompt}]
 
-        return response.choices[0].message.content
+    # Add past chat memory
+    for q, a in chat_history:
+        messages.append({"role": "user", "content": q})
+        messages.append({"role": "assistant", "content": a})
 
-    except Exception as e:
-        raise RuntimeError(f"Error generating answer: {str(e)}")
+    # Add current question
+    messages.append({
+        "role": "user",
+        "content": f"Context:\n{context}\n\nQuestion:\n{query}"
+    })
+
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        messages=messages
+    )
+
+    answer = response.choices[0].message.content
+
+    # Save memory
+    chat_history.append((query, answer))
+
+    return answer
 
 
 # ----------- API ENDPOINTS -----------
@@ -139,42 +122,44 @@ def home():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    global index, chunks
+    global index, chunks, chat_history
 
-    try:
-        if not file.filename.endswith(".pdf"):
-            return {"error": "Only PDF files are allowed"}
+    if not file.filename.endswith(".pdf"):
+        return {"error": "Only PDF files are allowed"}
 
-        file_location = f"temp_{file.filename}"
+    file_location = f"temp_{file.filename}"
 
-        with open(file_location, "wb") as f:
-            f.write(await file.read())
+    with open(file_location, "wb") as f:
+        f.write(await file.read())
 
-        index, chunks = process_document(file_location)
+    index, chunks = process_document(file_location)
 
-        os.remove(file_location)
+    os.remove(file_location)
 
-        return {
-            "message": "File processed successfully",
-            "chunks": len(chunks)
-        }
+    # Reset memory on new upload
+    chat_history = []
 
-    except Exception as e:
-        return {"error": str(e)}
+    return {
+        "message": "File processed successfully",
+        "chunks": len(chunks)
+    }
 
 
 @app.get("/ask")
 def ask(query: str):
     global index, chunks
 
-    try:
-        if index is None or chunks is None:
-            return {"error": "No document uploaded yet"}
+    if index is None or chunks is None:
+        return {"error": "No document uploaded yet"}
 
-        context = retrieve_chunks(query, index, chunks)
-        answer = generate_answer(query, context)
+    context = retrieve_chunks(query, index, chunks)
+    answer = generate_answer(query, context)
 
-        return {"answer": answer}
+    return {"answer": answer}
 
-    except Exception as e:
-        return {"error": str(e)}
+
+@app.post("/clear")
+def clear_chat():
+    global chat_history
+    chat_history = []
+    return {"message": "Chat cleared"}
