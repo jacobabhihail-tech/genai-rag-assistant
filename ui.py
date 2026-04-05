@@ -5,7 +5,7 @@ API_URL = "https://genai-rag-assistant-n5mg.onrender.com"
 
 st.set_page_config(page_title="AI Document Assistant", layout="wide")
 
-st.title("AI Document Assistant")
+st.title("Jacob's AI Document Assistant")
 
 st.sidebar.title("About")
 st.sidebar.info("Upload a PDF and chat with it using AI")
