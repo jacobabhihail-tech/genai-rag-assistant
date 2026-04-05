@@ -132,6 +132,29 @@ GET /health
 | `OPENAI_API_KEY` | API key for LLM provider | `sk-...` or openrouter key |
 | `OPENAI_BASE_URL` | API endpoint URL | `https://api.openrouter.ai/v1` |
 
+##  Architecture Diagram 
+
+```
+[User]
+   ↓
+[Streamlit UI]
+   ↓
+[FastAPI Backend]
+   ↓
+[Text Chunking]
+   ↓
+[Embeddings]
+   ↓
+[FAISS Vector DB]
+   ↓
+[Retriever]
+   ↓
+[LLM (OpenAI)]
+   ↓
+[Response]
+
+```
+
 ### Model Selection
 
 Change the model in `app.py` and `rag.py`:
