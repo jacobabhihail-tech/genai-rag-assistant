@@ -5,10 +5,12 @@ API_URL = "https://genai-rag-assistant-n5mg.onrender.com"
 
 st.set_page_config(page_title="AI Document Assistant", layout="wide")
 
-st.title("Jacob's AI Document Assistant")
+st.title("SYNAPSE BUSINESS SYSTEMS")
+st.title("Hi!👋 I am your AI Recruitment Assistant")
+st.subheader("Upload your resume and chat with me about your experience, skills, and more!")
 
 st.sidebar.title("About")
-st.sidebar.info("Upload a PDF and chat with it using AI")
+st.sidebar.info("Upload your resume and chat with AI recruiter")
 
 # -------- Session State --------
 if "chat_history" not in st.session_state:
